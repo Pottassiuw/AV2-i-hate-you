@@ -1,0 +1,161 @@
+# Exemplo para a extensão REST Client do VS Code.
+# Preencha as credenciais; a senha nunca precisa ser enviada ao Git.
+# Troque dataEntrada pelo dia de hoje em UTC (AAAA-MM-DD).
+# Execute cada requisição na ordem. CNPJ e códigos são únicos:
+# para repetir a jornada, consulte os registros existentes ou use outra base de desenvolvimento.
+@baseUrl = http://127.0.0.1:3000
+@email = admin@greencode.local
+@senha = PREENCHA_COM_A_SENHA_DO_SEU_ENV
+@dataEntrada = AAAA-MM-DD
+
+### 1. Entrar (200)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "senha": "{{senha}}"
+}
+
+@token = {{login.response.body.$.token}}
+
+### 2. Cadastrar organização (201)
+# @name organizacao
+POST {{baseUrl}}/organizacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "razaoSocial": "Organização da jornada Greencode",
+  "cnpj": "04.252.011/0001-10",
+  "enderecoCompleto": "Rua Exemplo, 100",
+  "telefone": "11999990000",
+  "email": "contato@example.com"
+}
+
+@organizacaoId = {{organizacao.response.body.$.id}}
+
+### 3. Receber um lote com dois equipamentos (201)
+# @name lote
+POST {{baseUrl}}/lotes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "organizacaoId": "{{organizacaoId}}",
+  "dataEntrada": "{{dataEntrada}}",
+  "notaFiscal": "NF-JORNADA-001",
+  "transportadora": "Transportadora Exemplo",
+  "equipamentos": [
+    {
+      "codigoBarrasInterno": "JORNADA-NOTEBOOK-001",
+      "tipo": "NOTEBOOK",
+      "marca": "Marca Exemplo",
+      "modelo": "Notebook Exemplo",
+      "anoFabricacao": 2020,
+      "estadoFisico": "BOM_ESTADO",
+      "pesoQuilogramas": 1.001
+    },
+    {
+      "codigoBarrasInterno": "JORNADA-MONITOR-001",
+      "tipo": "MONITOR",
+      "marca": "Marca Exemplo",
+      "modelo": "Monitor Exemplo",
+      "anoFabricacao": 2019,
+      "estadoFisico": "USADO_LEVE",
+      "pesoQuilogramas": 4.2
+    }
+  ]
+}
+
+@equipamentoId = {{lote.response.body.$.equipamentos[0].id}}
+
+### 4. Tentar pular triagem (422; versão permanece 0)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 0,
+  "origem": "ALMOXARIFADO",
+  "destino": "DESMONTE",
+  "statusRastreamento": "EM_DESMONTE"
+}
+
+### 5. Iniciar triagem (201; nova versão 1)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 0,
+  "origem": "ALMOXARIFADO",
+  "destino": "BANCADA DE TRIAGEM",
+  "statusRastreamento": "EM_TRIAGEM"
+}
+
+### 6. Confirmar triagem concluída (201; nova versão 2)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 1,
+  "origem": "BANCADA DE TRIAGEM",
+  "destino": "FILA DE DESMONTE",
+  "statusRastreamento": "AGUARDANDO_DESMONTE"
+}
+
+### 7. Iniciar desmonte (201; nova versão 3)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 2,
+  "origem": "FILA DE DESMONTE",
+  "destino": "BANCADA DE DESMONTE",
+  "statusRastreamento": "EM_DESMONTE"
+}
+
+### 8. Rebaixamento de duas categorias sem justificativa (422; permanece versão 3)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 3,
+  "origem": "BANCADA DE DESMONTE",
+  "destino": "BANCADA DE DESMONTE",
+  "estadoFisico": "USADO_MODERADO"
+}
+
+### 9. Rebaixamento com justificativa (201; nova versão 4)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 3,
+  "origem": "BANCADA DE DESMONTE",
+  "destino": "BANCADA DE DESMONTE",
+  "estadoFisico": "USADO_MODERADO",
+  "justificativa": "Inspeção identificou danos internos não visíveis no recebimento."
+}
+
+### 10. Consultar histórico (200; cinco eventos, incluindo recebimento)
+GET {{baseUrl}}/equipamentos/{{equipamentoId}}
+Authorization: Bearer {{token}}
+
+### 11. Reusar versão antiga (409; sem nova alteração)
+POST {{baseUrl}}/equipamentos/{{equipamentoId}}/movimentacoes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "versao": 3,
+  "origem": "DESMONTE",
+  "destino": "RECICLAGEM",
+  "statusRastreamento": "MATERIAL_RECICLAVEL"
+}
